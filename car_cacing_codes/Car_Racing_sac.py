@@ -4,6 +4,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
+import matplotlib.pyplot as plt
 from torch.distributions import Normal
 import time
 from collections import deque
@@ -93,39 +94,41 @@ class ReplayBuffer:
 # SAC agent class
 class SACAgent:
     def __init__(self, state_dim, action_dim, hidden_dim=256, lr=3e-4):
-        self.actor = Actor(state_dim, action_dim, hidden_dim)
-        self.critic = Critic(state_dim, action_dim, hidden_dim)
-        self.critic_target = Critic(state_dim, action_dim, hidden_dim)
-        
-        # Copy critic parameters to target
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.actor = Actor(state_dim, action_dim, hidden_dim).to(self.device)
+        self.critic = Critic(state_dim, action_dim, hidden_dim).to(self.device)
+        self.critic_target = Critic(state_dim, action_dim, hidden_dim).to(self.device)
         self.critic_target.load_state_dict(self.critic.state_dict())
         
         self.actor_optimizer = optim.Adam(self.actor.parameters(), lr=lr)
         self.critic_optimizer = optim.Adam(self.critic.parameters(), lr=lr)
-        
         self.replay_buffer = ReplayBuffer()
         self.batch_size = 256
         
-        # Hyperparameters
         self.gamma = 0.99
         self.tau = 0.005
         self.alpha = 0.2  # Temperature parameter for exploration
-        
+    
     def select_action(self, state):
+        state = torch.FloatTensor(state).unsqueeze(0).to(self.device)
         with torch.no_grad():
-            state = torch.FloatTensor(state).unsqueeze(0)
             action, _ = self.actor.sample(state)
-        return action.squeeze(0).numpy()
+        return action.squeeze(0).cpu().numpy()
     
     def update(self):
         if len(self.replay_buffer) < self.batch_size:
             return
         
-        # Sample from replay buffer
         state_batch, action_batch, reward_batch, next_state_batch, done_batch = \
             self.replay_buffer.sample(self.batch_size)
         
-        # Update critic
+        # GPU support
+        state_batch = state_batch.to(self.device)
+        action_batch = action_batch.to(self.device)
+        reward_batch = reward_batch.to(self.device)
+        next_state_batch = next_state_batch.to(self.device)
+        done_batch = done_batch.to(self.device)
+        
         with torch.no_grad():
             next_action, next_log_prob = self.actor.sample(next_state_batch)
             q1_next, q2_next = self.critic_target(next_state_batch, next_action)
@@ -141,7 +144,6 @@ class SACAgent:
         critic_loss.backward()
         self.critic_optimizer.step()
         
-        # Update actor
         action_new, log_prob = self.actor.sample(state_batch)
         q1_new, q2_new = self.critic(state_batch, action_new)
         q_new = torch.min(q1_new, q2_new)
@@ -152,11 +154,11 @@ class SACAgent:
         actor_loss.backward()
         self.actor_optimizer.step()
         
-        # Update target networks
         for param, target_param in zip(self.critic.parameters(), 
                                      self.critic_target.parameters()):
             target_param.data.copy_(self.tau * param.data + 
                                   (1 - self.tau) * target_param.data)
+
 
 # Training loop
 def train():
@@ -208,10 +210,39 @@ def train():
             training_time = time.time() - start_time
             print(f"Episode: {episode + 1}")
             print(f"Average Reward: {avg_reward:.2f}")
-            print(f"Success Rate: {success_count/(episode + 1):.2%}")
+            print(f"Success Rate: {success_count / (episode + 1):.2%}")
             print(f"Training Time: {training_time:.2f}s")
     
-    return rewards_history, success_count, total_reward/episodes, training_time
+    # Return relevant statistics
+    return agent, rewards_history, success_count, total_reward, time.time() - start_time
+
+
+        algorithm_name = 'SAC | Car Racing'
+            # Inside the train function
+        plot_rewards_with_label(rewards_history, "SAC | Car Racing")
+
+
+def plot_rewards_with_label(episode_rewards, algorithm_name):
+    
+    # Plot rewards
+    plt.figure(figsize=(12, 6))
+    plt.plot(episode_rewards, label=algorithm_name)
+    plt.title('Episode Rewards')
+    plt.xlabel('Episode')
+    plt.ylabel('Reward')
+    plt.legend(loc='upper right')
+    plt.text(
+        0.95, 0.95, algorithm_name,
+        horizontalalignment='right', verticalalignment='top',
+        transform=plt.gca().transAxes, fontsize=12,
+        bbox=dict(facecolor='white', alpha=0.5, edgecolor='black')
+    )
+    plt.grid()
+    plt.show()
+
+    
+    
+    return episode_rewards, agent, rewards_history, success_count, training_time
 
 # Run training
 rewards_history, success_count, avg_reward, training_time = train()
