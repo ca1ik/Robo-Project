@@ -129,7 +129,7 @@ class SACAgent:
 
 # Eğitim döngüsü
 agent = SACAgent()
-episodes = 100
+episodes = 50
 
 rewards = []
 for episode in range(episodes):
