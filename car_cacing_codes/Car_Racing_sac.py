@@ -214,16 +214,14 @@ def train():
             print(f"Training Time: {training_time:.2f}s")
     
     # Return relevant statistics
-    return agent, rewards_history, success_count, total_reward, time.time() - start_time
 
 
-        algorithm_name = 'SAC | Car Racing'
+algorithm_name = 'SAC | Car Racing'
             # Inside the train function
-        plot_rewards_with_label(rewards_history, "SAC | Car Racing")
+plot_rewards_with_label(rewards_history, "SAC | Car Racing")
 
 
 def plot_rewards_with_label(episode_rewards, algorithm_name):
-    
     # Plot rewards
     plt.figure(figsize=(12, 6))
     plt.plot(episode_rewards, label=algorithm_name)
