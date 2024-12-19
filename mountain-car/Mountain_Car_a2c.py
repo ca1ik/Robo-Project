@@ -6,23 +6,31 @@ import torch.nn.functional as F
 import numpy as np
 import random
 import matplotlib.pyplot as plt
-
-# Ortam ve parametreler
-env = gym.make("MountainCar-v0")
-torch.manual_seed(679)
-random.seed(679)
-np.random.seed(679)
+from collections import namedtuple
 
 # Hyperparameters
-num_inputs = env.observation_space.shape[0]
-num_actions = env.action_space.n
 gamma = 0.99
+num_episodes = 50
+seed = 679
+log_interval = 10
 epsilon = 0.99
 lr = 0.002
-num_episodes = 50
-log_interval = 1  # Her episode için çıktı almak istediğiniz için 1 olarak ayarlandı.
 
-# Actor-Critic Model
+# Create environment
+env = gym.make('MountainCar-v0')
+state, _ = env.reset(seed=seed)
+
+torch.manual_seed(seed)
+np.random.seed(seed)
+random.seed(seed)
+
+num_inputs = env.observation_space.shape[0]
+num_actions = env.action_space.n
+SavedAction = namedtuple('SavedAction', ['log_prob', 'value'])
+
+def epsilon_value(epsilon, decay=0.995):
+    return max(0.1, epsilon * decay)
+
 class ActorCritic(nn.Module):
     def __init__(self):
         super(ActorCritic, self).__init__()
@@ -52,10 +60,6 @@ class ActorCritic(nn.Module):
 
 model = ActorCritic()
 optimizer = optim.Adam(model.parameters(), lr=lr)
-SavedAction = namedtuple('SavedAction', ['log_prob', 'value'])
-
-def epsilon_decay(epsilon, decay_rate=0.99):
-    return epsilon * decay_rate
 
 def perform_updates():
     r = 0
@@ -72,13 +76,31 @@ def perform_updates():
 
     for (log_prob, value), R in zip(saved_actions, returns):
         advantage = R - value.item()
-        policy_losses.append(-log_prob * advantage)
-        critic_losses.append(F.mse_loss(value, torch.tensor([R])))
+
+        # Calculate policy loss
+        if log_prob.size() == torch.Size([1]):
+            policy_losses.append(-log_prob * advantage)
+
+        # Calculate value loss
+        if value.size() == torch.Size([1]):
+            critic_losses.append(F.mse_loss(value, torch.tensor([R])))
+
+    if not policy_losses or not critic_losses:
+        print("Warning: Empty policy_losses or critic_losses. Skipping update.")
+        return 0.0
+
+    try:
+        policy_loss = torch.stack(policy_losses).sum()
+        critic_loss = torch.stack(critic_losses).sum()
+    except RuntimeError as e:
+        print(f"Error stacking tensors: {e}")
+        return 0.0
 
     optimizer.zero_grad()
-    loss = torch.stack(policy_losses).sum() + torch.stack(critic_losses).sum()
+    loss = policy_loss + critic_loss
     loss.backward()
     optimizer.step()
+
     del model.rewards_achieved[:]
     del model.action_history[:]
     return loss.item()
@@ -104,7 +126,7 @@ def main():
     plot_rewards = []
 
     for i_episode in range(num_episodes):
-        state, _ = env.reset()
+        state, _ = env.reset(seed=seed)
         ep_reward = 0
         done = False
         counter = 0
@@ -113,7 +135,9 @@ def main():
             state = torch.from_numpy(state).float()
             value, action, log_prob = model.act(state, eps)
             model.action_history.append(SavedAction(log_prob, value))
+
             state, reward, done, truncated, _ = env.step(action.item())
+            reward += abs(state[1]) * 100  # Reward shaping for faster movement
             done = done or truncated
 
             model.rewards_achieved.append(reward)
@@ -122,17 +146,14 @@ def main():
 
             if counter % 5 == 0:
                 perform_updates()
-        
-        plot_rewards.append(ep_reward)
-        eps = epsilon_decay(eps)
 
-        # Her episode için terminale çıktı
+        plot_rewards.append(ep_reward)
+        eps = epsilon_value(eps)
+
         print(f"Episode: {i_episode + 1}, Reward: {ep_reward:.2f}, Epsilon: {eps:.2f}")
 
-        if (i_episode + 1) % log_interval == 0:
-            print(f"--- Log Interval --- Episode: {i_episode + 1}, Avg Reward: {np.mean(plot_rewards[-log_interval:]):.2f}")
+    algorithm_name = "A2C - Mountain Car"
+    plot_rewards_with_label(plot_rewards, algorithm_name)
 
-    plot_rewards_with_label(plot_rewards, "A2C - Mountain Car")
-
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()

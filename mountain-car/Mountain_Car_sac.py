@@ -141,20 +141,28 @@ for episode in range(episodes):
         action = agent.select_action(state)
         next_state, reward, done, truncated, _ = env.step(action)
         done = done or truncated  # Yeni Gym API için gerekli
+
+        # Replay buffer'a geçişi ekleme
         agent.replay_buffer.add((state, action, reward, next_state, done))
+
+        # Ağı güncelleme
         agent.train()
+
+        # Durum güncelleme
         state = next_state
         episode_reward += reward
 
     rewards.append(episode_reward)
-    print(f"Episode: {episode}, Reward: {episode_reward}")
+    print(f"Episode: {episode + 1}, Reward: {episode_reward}")
 
 env.close()
 
 # Eğitim sonuçlarını görselleştir
+plt.figure(figsize=(12, 6))
 plt.plot(rewards, label='SAC - Mountain Car')
 plt.legend()
 plt.xlabel('Episode')
 plt.ylabel('Reward')
 plt.title('SAC Training on Mountain Car')
+plt.grid()
 plt.show()
