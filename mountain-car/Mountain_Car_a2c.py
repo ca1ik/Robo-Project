@@ -14,8 +14,7 @@ num_episodes = 50
 seed = 679
 log_interval = 10
 epsilon = 0.99
-lr = 1e-4  # Learning rate
-hidden_dim = 256
+lr = 0.002
 
 # Create environment
 env = gym.make('MountainCar-v0')
@@ -29,22 +28,24 @@ num_inputs = env.observation_space.shape[0]
 num_actions = env.action_space.n
 SavedAction = namedtuple('SavedAction', ['log_prob', 'value'])
 
-def epsilon_value(epsilon, decay=0.995):
-    return max(0.01, epsilon * decay)
+def epsilon_value(epsilon, decay=0.99):
+    return epsilon * decay
 
 class ActorCritic(nn.Module):
     def __init__(self):
         super(ActorCritic, self).__init__()
-        self.fc1 = nn.Linear(num_inputs, hidden_dim)
-        self.fc2 = nn.Linear(hidden_dim, hidden_dim)
-        self.actor_head = nn.Linear(hidden_dim, num_actions)
-        self.critic_head = nn.Linear(hidden_dim, 1)
+        self.fc1 = nn.Linear(num_inputs, 64)
+        self.fc2 = nn.Linear(64, 128)
+        self.fc3 = nn.Linear(128, 64)
+        self.actor_head = nn.Linear(64, num_actions)
+        self.critic_head = nn.Linear(64, 1)
         self.action_history = []
         self.rewards_achieved = []
 
     def forward(self, state_inputs):
         x = F.relu(self.fc1(state_inputs))
         x = F.relu(self.fc2(x))
+        x = F.relu(self.fc3(x))
         return self.critic_head(x), x
 
     def act(self, state_inputs, eps):
@@ -71,29 +72,33 @@ def perform_updates():
     for i in rewards[::-1]:
         r = gamma * r + i
         returns.insert(0, r)
-    returns = torch.tensor(returns, dtype=torch.float)
+    returns = torch.tensor(returns, dtype=torch.float32)
 
     for (log_prob, value), R in zip(saved_actions, returns):
         advantage = R - value.item()
 
-        # Only add valid tensors
-        if log_prob.numel() > 0 and value.numel() > 0:
+        # calculating policy loss
+        if log_prob.size() == torch.Size([1]):
             policy_losses.append(-log_prob * advantage)
-            critic_losses.append(F.mse_loss(value, torch.tensor([R])))
 
-    # Skip updates if there are no valid losses
+        # calculating value loss
+        if value.size() == torch.Size([1]):
+            critic_losses.append(F.mse_loss(value, torch.tensor([R], dtype=torch.float32)))
+
     if not policy_losses or not critic_losses:
         print("Warning: Empty policy_losses or critic_losses. Skipping update.")
         return 0.0
 
-    # Compute and apply gradients
-    policy_loss = torch.stack(policy_losses).sum()
-    critic_loss = torch.stack(critic_losses).sum()
+    try:
+        policy_loss = torch.stack(policy_losses).sum()
+        critic_loss = torch.stack(critic_losses).sum()
+    except RuntimeError as e:
+        print(f"Error stacking tensors: {e}")
+        return 0.0
 
     optimizer.zero_grad()
     loss = policy_loss + critic_loss
     loss.backward()
-    torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
     optimizer.step()
 
     del model.rewards_achieved[:]
@@ -128,8 +133,6 @@ def main():
             state, reward, done, truncated, _ = env.step(action.item())
             done = done or truncated
 
-            # Encourage faster movement
-            reward += 10 * abs(state[1])  # Speed-based reward
             model.rewards_achieved.append(reward)
             ep_reward += reward
             counter += 1
