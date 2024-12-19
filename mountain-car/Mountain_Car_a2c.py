@@ -1,91 +1,63 @@
-import argparse
 import gym
-import numpy as np
-from itertools import count
-from collections import namedtuple
-from gym import spaces
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 import torch.optim as optim
-from torch.distributions import Categorical
+import torch.nn.functional as F
+import numpy as np
 import random
 import matplotlib.pyplot as plt
 
-parser = argparse.ArgumentParser(description='PyTorch Advantage Actor critic example')
-parser.add_argument('--gamma', type=float, default=0.99, metavar='G',
-                    help='discount factor (default: 0.99)')
-parser.add_argument('--num_episodes', type=int, default=50, metavar='NU',
-                    help='num_epsiodes (default: 50)')
-parser.add_argument('--seed', type=int, default=679, metavar='N',
-                    help='random seed (default: 679)')
-parser.add_argument('--log-interval', type=int, default=10, metavar='N',
-                    help='interval between training status logs (default: 10)')
-args = parser.parse_args()
+# Ortam ve parametreler
+env = gym.make("MountainCar-v0")
+torch.manual_seed(679)
+random.seed(679)
+np.random.seed(679)
 
-# Create environment
-env = gym.make('MountainCar-v0')
-
-# Set the seed during the reset
-state = env.reset(seed=args.seed)  # Pass the seed when resetting the environment
-
-torch.manual_seed(args.seed)
-num_inputs = 2
+# Hyperparameters
+num_inputs = env.observation_space.shape[0]
+num_actions = env.action_space.n
+gamma = 0.99
 epsilon = 0.99
-SavedAction = namedtuple('SavedAction', ['log_prob', 'value'])
+lr = 0.002
+num_episodes = 50
+log_interval = 1  # Her episode için çıktı almak istediğiniz için 1 olarak ayarlandı.
 
-
-def epsilon_value(epsilon):
-    eps = 0.99 * epsilon
-    return eps
-
-
+# Actor-Critic Model
 class ActorCritic(nn.Module):
-
     def __init__(self):
         super(ActorCritic, self).__init__()
-        self.Linear1 = nn.Linear(num_inputs, 64)
-        nn.init.xavier_uniform(self.Linear1.weight)
-        self.Linear2 = nn.Linear(64, 128)
-        nn.init.xavier_uniform(self.Linear2.weight)
-        self.Linear3 = nn.Linear(128, 64)
-        nn.init.xavier_uniform(self.Linear3.weight)
-        num_actions = env.action_space.n
-
+        self.fc1 = nn.Linear(num_inputs, 64)
+        self.fc2 = nn.Linear(64, 128)
+        self.fc3 = nn.Linear(128, 64)
         self.actor_head = nn.Linear(64, num_actions)
         self.critic_head = nn.Linear(64, 1)
-        nn.init.xavier_uniform(self.critic_head.weight)
         self.action_history = []
         self.rewards_achieved = []
 
     def forward(self, state_inputs):
-        x = F.relu(self.Linear1(state_inputs))
-        x = F.relu(self.Linear2(x))
-        x = F.relu(self.Linear3(x))
+        x = F.relu(self.fc1(state_inputs))
+        x = F.relu(self.fc2(x))
+        x = F.relu(self.fc3(x))
         return self.critic_head(x), x
 
     def act(self, state_inputs, eps):
         value, x = self(state_inputs)
         x = F.softmax(self.actor_head(x), dim=-1)
-        m = Categorical(x)
-        e_greedy = random.random()
-        if e_greedy > eps:
+        m = torch.distributions.Categorical(x)
+        if random.random() > eps:
             action = m.sample()
         else:
-            action = m.sample_n(3)
-            pick = random.randint(-1, 2)
-            action = action[pick]
+            action = torch.randint(0, num_actions, (1,))
         return value, action, m.log_prob(action)
 
-
 model = ActorCritic()
-optimizer = optim.Adam(model.parameters(), lr=0.002)
+optimizer = optim.Adam(model.parameters(), lr=lr)
+SavedAction = namedtuple('SavedAction', ['log_prob', 'value'])
 
+def epsilon_decay(epsilon, decay_rate=0.99):
+    return epsilon * decay_rate
 
 def perform_updates():
-    '''
-    Updating the ActorCritic network params
-    '''
     r = 0
     saved_actions = model.action_history
     returns = []
@@ -94,32 +66,24 @@ def perform_updates():
     critic_losses = []
 
     for i in rewards[::-1]:
-        r = args.gamma * r + i
+        r = gamma * r + i
         returns.insert(0, r)
     returns = torch.tensor(returns)
 
     for (log_prob, value), R in zip(saved_actions, returns):
         advantage = R - value.item()
-
-        # calculating policy loss
         policy_losses.append(-log_prob * advantage)
-
-        # calculating value loss
         critic_losses.append(F.mse_loss(value, torch.tensor([R])))
-    optimizer.zero_grad()
 
-    # Finding cumulative loss
+    optimizer.zero_grad()
     loss = torch.stack(policy_losses).sum() + torch.stack(critic_losses).sum()
     loss.backward()
     optimizer.step()
-    # Action history and rewards cleared for next episode
     del model.rewards_achieved[:]
     del model.action_history[:]
     return loss.item()
 
-
 def plot_rewards_with_label(episode_rewards, algorithm_name):
-    # Plot rewards
     plt.figure(figsize=(12, 6))
     plt.plot(episode_rewards, label=algorithm_name)
     plt.title('Episode Rewards')
@@ -136,43 +100,39 @@ def plot_rewards_with_label(episode_rewards, algorithm_name):
     plt.show()
 
 def main():
-    eps = epsilon_value(epsilon)
-    losses = []
-    counters = []
+    eps = epsilon
     plot_rewards = []
 
-    for i_episode in range(0, args.num_episodes):
-        print(f"Current episode: {i_episode}")
-        counter = 0
-        state, _ = env.reset(seed=args.seed)  # Unpack the state and info
+    for i_episode in range(num_episodes):
+        state, _ = env.reset()
         ep_reward = 0
         done = False
+        counter = 0
 
         while not done:
-            # Unrolling state and getting action from the nn output
-            state = torch.from_numpy(state).float()  # state is now a NumPy array
-            value, action, ac_log_prob = model.act(state, eps)
-            model.action_history.append(SavedAction(ac_log_prob, value))
-            # Agent takes the action
-            state, reward, done, truncated, _ = env.step(action.item())  # Updated to 5 values
+            state = torch.from_numpy(state).float()
+            value, action, log_prob = model.act(state, eps)
+            model.action_history.append(SavedAction(log_prob, value))
+            state, reward, done, truncated, _ = env.step(action.item())
+            done = done or truncated
 
             model.rewards_achieved.append(reward)
             ep_reward += reward
             counter += 1
+
             if counter % 5 == 0:
-                ''' performing backprop at every 5 time steps to avoid 
-                    highly correlational states (sampling traces from episode) '''
-                loss = perform_updates()
-            eps = epsilon_value(eps)
+                perform_updates()
+        
+        plot_rewards.append(ep_reward)
+        eps = epsilon_decay(eps)
 
-        if i_episode % args.log_interval == 0:
-            losses.append(loss)
-            counters.append(counter)
-            plot_rewards.append(ep_reward)
+        # Her episode için terminale çıktı
+        print(f"Episode: {i_episode + 1}, Reward: {ep_reward:.2f}, Epsilon: {eps:.2f}")
 
-    # Call the reward plot function
-    algorithm_name = "A2C - Mountain Car"
-    plot_rewards_with_label(plot_rewards, algorithm_name)
+        if (i_episode + 1) % log_interval == 0:
+            print(f"--- Log Interval --- Episode: {i_episode + 1}, Avg Reward: {np.mean(plot_rewards[-log_interval:]):.2f}")
 
-if __name__ == '__main__':
+    plot_rewards_with_label(plot_rewards, "A2C - Mountain Car")
+
+if __name__ == "__main__":
     main()
