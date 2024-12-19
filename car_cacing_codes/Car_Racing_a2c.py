@@ -180,27 +180,29 @@ def train_a2c(env_name, num_episodes=100, max_steps=1000):
     
     # Calculate training statistics
     training_time = time.time() - training_start_time
+
+    # Example usage
+    algorithm_name = 'A2C | Car Racing'
+    plot_rewards_with_label(episode_rewards, algorithm_name)
+
+def plot_rewards_with_label(episode_rewards, algorithm_name):
     
-    # Plotting
-    plt.figure(figsize=(12, 7))
-    plt.plot(episode_rewards)
-    plt.title('Episode Rewards during A2C Training', fontsize=15)
-    plt.xlabel('Episode', fontsize=12)
-    plt.ylabel('Reward', fontsize=12)
-    
-    # Add statistics text box
-    plt.text(0.70, 0.05, 
-             f'Training Time: {training_time:.2f}s\n'
-             f'Successful Episodes: {successful_episodes}\n'
-             f'Average Reward: {np.mean(episode_rewards):.2f}\n'
-             f'Total Episodes: {num_episodes}', 
-             transform=plt.gca().transAxes, 
-             verticalalignment='bottom',
-             bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5),
-             fontsize=10)
-    
-    plt.tight_layout()
+    # Plot rewards
+    plt.figure(figsize=(12, 6))
+    plt.plot(episode_rewards, label=algorithm_name)
+    plt.title('Episode Rewards')
+    plt.xlabel('Episode')
+    plt.ylabel('Reward')
+    plt.legend(loc='upper right')
+    plt.text(
+        0.95, 0.95, algorithm_name,
+        horizontalalignment='right', verticalalignment='top',
+        transform=plt.gca().transAxes, fontsize=12,
+        bbox=dict(facecolor='white', alpha=0.5, edgecolor='black')
+    )
+    plt.grid()
     plt.show()
+
     
     return agent, episode_rewards
 
