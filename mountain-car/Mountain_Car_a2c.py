@@ -47,7 +47,7 @@ def normalize_state(state):
 class ActorCritic(nn.Module):
     def __init__(self):
         super(ActorCritic, self).__init__()
-        self.fc1 = nn.Linear(num_inputs, 64)
+        self.fc1 = nn.Linear(num_inputs, 64)  # Daha küçük bir katman
         nn.init.xavier_uniform_(self.fc1.weight)
         self.actor = nn.Linear(64, env.action_space.n)
         self.critic = nn.Linear(64, 1)
@@ -66,7 +66,7 @@ class ActorCritic(nn.Module):
         return value, action, m.log_prob(action), m.entropy()
 
 model = ActorCritic()
-optimizer = optim.Adam(model.parameters(), lr=0.001)  # Öğrenme oranını artırdık
+optimizer = optim.Adam(model.parameters(), lr=0.005)  # Öğrenme oranını artırdık
 
 def perform_updates(saved_actions, rewards, gamma):
     '''
@@ -74,7 +74,7 @@ def perform_updates(saved_actions, rewards, gamma):
     '''
     R = 0
     returns = []
-    for r in reversed(rewards):
+    for r in rewards[::-1]:
         R = r + gamma * R
         returns.insert(0, R)
     returns = torch.tensor(returns, dtype=torch.float)
@@ -97,7 +97,7 @@ def perform_updates(saved_actions, rewards, gamma):
     value_losses = F.mse_loss(values, returns)
 
     # Entropy loss
-    entropy_loss = -0.05 * entropies.sum()  # Entropy bonus artırıldı
+    entropy_loss = -0.1 * entropies.sum()  # Entropy bonus artırıldı
 
     # Total loss
     loss = policy_losses + value_losses + entropy_loss
@@ -130,7 +130,7 @@ def main():
             print(f"Starting Episode {i_episode}")
 
         counter = 0
-        state, _ = env.reset()  # Seed'i burada geçirmiyoruz
+        state, _ = env.reset()
         state = normalize_state(state)
         ep_reward = 0
         done = False
@@ -156,6 +156,10 @@ def main():
         loss, policy_loss_val, value_loss_val, entropy_loss_val = perform_updates(saved_actions, rewards, args.gamma)
 
         if i_episode % args.log_interval == 0:
+            # Aksiyon dağılımını hesapla
+            actions = [action.item() for action in [sa.log_prob for sa in saved_actions]]
+            action_counts = np.bincount(actions, minlength=env.action_space.n)
+
             losses.append(loss)
             policy_losses.append(policy_loss_val)
             value_losses.append(value_loss_val)
@@ -165,9 +169,11 @@ def main():
             avg_reward = np.mean(plot_rewards[-args.log_interval:])
             average_rewards.append(avg_reward)
             print(f"Episode {i_episode}\tLoss: {loss:.4f}\tPolicy Loss: {policy_loss_val:.4f}\tValue Loss: {value_loss_val:.4f}\tEntropy Loss: {entropy_loss_val:.4f}\tTotal Reward: {ep_reward}\tAverage Reward: {avg_reward:.2f}")
+            print(f"Action distribution: {action_counts / np.sum(action_counts)}")  # Aksiyon dağılımını gösterme
 
-    # Kayıp grafiğini çizme
-    plt.figure()
+    # Grafik çizimleri
+    plt.figure(figsize=(12, 8))
+    plt.subplot(2, 2, 1)
     plt.xlabel('Episodes')
     plt.ylabel('Loss')
     plt.plot(losses, label='Total Loss')
@@ -176,31 +182,28 @@ def main():
     plt.plot(entropy_losses, label='Entropy Loss')
     plt.legend()
     plt.title('Loss over Episodes')
-    plt.savefig('loss1.png')
 
-    # Zaman adımlarını çizme
-    plt.figure()
+    plt.subplot(2, 2, 2)
     plt.xlabel('Episodes')
     plt.ylabel('Timesteps')
     plt.plot(counters)
     plt.title('Timesteps per Episode')
-    plt.savefig('timestep.png')
 
-    # Toplam ödülleri çizme
-    plt.figure()
+    plt.subplot(2, 2, 3)
     plt.xlabel('Episodes')
     plt.ylabel('Rewards')
     plt.plot(plot_rewards)
     plt.title('Total Rewards per Episode')
-    plt.savefig('rewards.png')
 
-    # Ortalama ödülleri çizme
-    plt.figure()
+    plt.subplot(2, 2, 4)
     plt.xlabel('Episodes')
     plt.ylabel('Average Rewards')
     plt.plot(average_rewards)
     plt.title('Average Rewards')
-    plt.savefig('average_rewards.png')
+
+    plt.tight_layout()
+    plt.savefig('training_plots.png')
+    plt.show()
 
     env.close()
 
