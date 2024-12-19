@@ -163,6 +163,7 @@ class SACAgent:
 # Training loop
 def train():
     env = gym.make('CarRacing-v3', continuous=True)
+
     state_dim = 96 * 96 * 3  # Flattened image dimensions
     action_dim = 3  # Steering, gas, brake
     
@@ -214,11 +215,7 @@ def train():
             print(f"Training Time: {training_time:.2f}s")
     
     # Return relevant statistics
-
-
-algorithm_name = 'SAC | Car Racing'
-            # Inside the train function
-plot_rewards_with_label(rewards_history, "SAC | Car Racing")
+    return rewards_history, success_count, total_reward / episodes, time.time() - start_time
 
 
 def plot_rewards_with_label(episode_rewards, algorithm_name):
@@ -238,10 +235,9 @@ def plot_rewards_with_label(episode_rewards, algorithm_name):
     plt.grid()
     plt.show()
 
-    
-    
-    return agent, rewards_history, success_count, avg_reward, training_time = train()
 
-
-# Run training
-rewards_history, success_count, avg_reward, training_time = train()
+# Main code to run training and plot rewards
+if __name__ == "__main__":
+    rewards_history, success_count, avg_reward, training_time = train()
+    algorithm_name = 'SAC | Car Racing'
+    plot_rewards_with_label(rewards_history, algorithm_name)
