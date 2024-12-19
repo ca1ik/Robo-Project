@@ -293,7 +293,7 @@ def main():
     total_training_time = time.time() - start_time
 
     def plot_rewards_with_label(episode_rewards, algorithm_name):
-   
+    
     # Plot rewards
     plt.figure(figsize=(12, 6))
     plt.plot(episode_rewards, label=algorithm_name)
@@ -309,6 +309,7 @@ def main():
     )
     plt.grid()
     plt.show()
+
 
     
     env.close()
