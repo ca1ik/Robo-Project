@@ -240,7 +240,8 @@ def plot_rewards_with_label(episode_rewards, algorithm_name):
 
     
     
-    return episode_rewards, agent, rewards_history, success_count, training_time
+    return agent, rewards_history, success_count, avg_reward, training_time = train()
+
 
 # Run training
 rewards_history, success_count, avg_reward, training_time = train()
