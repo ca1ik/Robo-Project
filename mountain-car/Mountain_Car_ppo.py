@@ -145,6 +145,6 @@ ppo_agent = PPOAgent(state_dim, action_dim, max_action)
 ppo_rewards = train(ppo_agent, env, replay_buffer, "PPO")
 
 # Sonuçları Görselleştir
-plt.plot(ppo_rewards, label='PPO')
+plt.plot(ppo_rewards, label='PPO - Mountain Car')
 plt.legend()
 plt.show()

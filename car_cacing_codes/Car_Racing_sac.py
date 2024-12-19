@@ -237,7 +237,9 @@ def plot_rewards_with_label(episode_rewards, algorithm_name):
 
 
 # Main code to run training and plot rewards
+# Main code to run training and plot rewards
 if __name__ == "__main__":
     rewards_history, success_count, avg_reward, training_time = train()
-    algorithm_name = 'SAC | Car Racing'
+    algorithm_name = 'SAC | Car Racing'  # Bu satır doğru girintide
     plot_rewards_with_label(rewards_history, algorithm_name)
+

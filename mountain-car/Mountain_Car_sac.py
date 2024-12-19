@@ -3,6 +3,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import numpy as np
+import matplotlib.pyplot as plt
 
 # Ortam ve parametreler
 env = gym.make("MountainCarContinuous-v0")
@@ -11,12 +12,12 @@ action_dim = env.action_space.shape[0]
 action_bound = env.action_space.high[0]
 
 # Hyperparameters
-lr = 3e-4 #learning rate 
-gamma = 0.99 #discount factor
-tau = 0.005 #target network update rate
+lr = 3e-4  # learning rate
+gamma = 0.99  # discount factor
+tau = 0.005  # target network update rate
 alpha = 0.2  # Entropi katsayısı
-hidden_dim = 256 #hidden layer dimension
-replay_buffer_size = 100000 # replay buffer size
+hidden_dim = 256  # hidden layer dimension
+replay_buffer_size = 100000  # replay buffer size
 batch_size = 64
 
 # Replay buffer
@@ -130,6 +131,7 @@ class SACAgent:
 agent = SACAgent()
 episodes = 100
 
+rewards = []
 for episode in range(episodes):
     state, _ = env.reset()  # Yeni Gym API'siyle uyumlu
     episode_reward = 0
@@ -144,6 +146,15 @@ for episode in range(episodes):
         state = next_state
         episode_reward += reward
 
+    rewards.append(episode_reward)
     print(f"Episode: {episode}, Reward: {episode_reward}")
 
 env.close()
+
+# Eğitim sonuçlarını görselleştir
+plt.plot(rewards, label='SAC - Mountain Car')
+plt.legend()
+plt.xlabel('Episode')
+plt.ylabel('Reward')
+plt.title('SAC Training on Mountain Car')
+plt.show()

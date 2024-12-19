@@ -15,8 +15,8 @@ import matplotlib.pyplot as plt
 parser = argparse.ArgumentParser(description='PyTorch Advantage Actor critic example')
 parser.add_argument('--gamma', type=float, default=0.99, metavar='G',
                     help='discount factor (default: 0.99)')
-parser.add_argument('--num_episodes', type=int, default=1000, metavar='NU',
-                    help='num_epsiodes (default: 1000)')
+parser.add_argument('--num_episodes', type=int, default=50, metavar='NU',
+                    help='num_epsiodes (default: 50)')
 parser.add_argument('--seed', type=int, default=679, metavar='N',
                     help='random seed (default: 679)')
 parser.add_argument('--log-interval', type=int, default=10, metavar='N',
@@ -118,6 +118,23 @@ def perform_updates():
     return loss.item()
 
 
+def plot_rewards_with_label(episode_rewards, algorithm_name):
+    # Plot rewards
+    plt.figure(figsize=(12, 6))
+    plt.plot(episode_rewards, label=algorithm_name)
+    plt.title('Episode Rewards')
+    plt.xlabel('Episode')
+    plt.ylabel('Reward')
+    plt.legend(loc='upper right')
+    plt.text(
+        0.95, 0.95, algorithm_name,
+        horizontalalignment='right', verticalalignment='top',
+        transform=plt.gca().transAxes, fontsize=12,
+        bbox=dict(facecolor='white', alpha=0.5, edgecolor='black')
+    )
+    plt.grid()
+    plt.show()
+
 def main():
     eps = epsilon_value(epsilon)
     losses = []
@@ -132,8 +149,7 @@ def main():
         done = False
 
         while not done:
-
-            # unrolling state and getting action from the nn output
+            # Unrolling state and getting action from the nn output
             state = torch.from_numpy(state).float()  # state is now a NumPy array
             value, action, ac_log_prob = model.act(state, eps)
             model.action_history.append(SavedAction(ac_log_prob, value))
@@ -154,26 +170,9 @@ def main():
             counters.append(counter)
             plot_rewards.append(ep_reward)
 
-    # plotting loss
-    plt.xlabel('Episodes')
-    plt.ylabel('Loss')
-    plt.plot(losses)
-    plt.savefig('loss1.png')
-
-    # plotting number of timesteps elapsed before convergence
-    plt.clf()
-    plt.xlabel('Episodes')
-    plt.ylabel('timesteps')
-    plt.plot(counters)
-    plt.savefig('timestep.png')
-    # plotting total rewards achieved during all episodes
-    plt.clf()
-    plt.xlabel('Episodes')
-    plt.ylabel('rewards')
-    plt.plot(plot_rewards)
-    plt.savefig('rewards.png')
-
-
+    # Call the reward plot function
+    algorithm_name = "A2C - Mountain Car"
+    plot_rewards_with_label(plot_rewards, algorithm_name)
 
 if __name__ == '__main__':
     main()
