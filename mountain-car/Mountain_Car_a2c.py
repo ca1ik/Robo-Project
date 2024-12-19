@@ -1,181 +1,179 @@
+import argparse
 import gym
+import numpy as np
+from itertools import count
+from collections import namedtuple
+from gym import spaces
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import torch.optim as optim
-import torch.nn.functional as F  # BURADA EKLENDİ
-import numpy as np
+from torch.distributions import Categorical
 import random
 import matplotlib.pyplot as plt
-from collections import namedtuple
 
-# Diğer kod aynı...
-
-
-# Hyperparameters
-gamma = 0.99
-num_episodes = 50
-seed = 679
-log_interval = 10
-epsilon = 0.99
-lr_actor = 3e-4
-lr_critic = 3e-4
-tau = 0.005
+parser = argparse.ArgumentParser(description='PyTorch Advantage Actor critic example')
+parser.add_argument('--gamma', type=float, default=0.99, metavar='G',
+                    help='discount factor (default: 0.99)')
+parser.add_argument('--num_episodes', type=int, default=1000, metavar='NU',
+                    help='num_epsiodes (default: 1000)')
+parser.add_argument('--seed', type=int, default=679, metavar='N',
+                    help='random seed (default: 679)')
+parser.add_argument('--log-interval', type=int, default=10, metavar='N',
+                    help='interval between training status logs (default: 10)')
+args = parser.parse_args()
 
 # Create environment
-env = gym.make('MountainCarContinuous-v0')
-state_dim = env.observation_space.shape[0]
-action_dim = env.action_space.shape[0]
-action_bound = env.action_space.high[0]
+env = gym.make('MountainCar-v0')
 
-# Set seeds
-torch.manual_seed(seed)
-np.random.seed(seed)
-random.seed(seed)
+# Set the seed during the reset
+state = env.reset(seed=args.seed)  # Pass the seed when resetting the environment
 
-# Replay buffer for sampling experiences
-class ReplayBuffer:
-    def __init__(self, max_size=100000):
-        self.buffer = []
-        self.max_size = max_size
+torch.manual_seed(args.seed)
+num_inputs = 2
+epsilon = 0.99
+SavedAction = namedtuple('SavedAction', ['log_prob', 'value'])
 
-    def add(self, transition):
-        if len(self.buffer) < self.max_size:
-            self.buffer.append(transition)
-        else:
-            self.buffer.pop(0)
-            self.buffer.append(transition)
 
-    def sample(self, batch_size):
-        indices = np.random.choice(len(self.buffer), batch_size, replace=False)
-        states, actions, rewards, next_states, dones = zip(*[self.buffer[i] for i in indices])
-        return np.array(states), np.array(actions), np.array(rewards), np.array(next_states), np.array(dones)
+def epsilon_value(epsilon):
+    eps = 0.99 * epsilon
+    return eps
 
-# Actor Network
-class Actor(nn.Module):
-    def __init__(self, state_dim, action_dim, hidden_dim=256):
-        super(Actor, self).__init__()
-        self.fc = nn.Sequential(
-            nn.Linear(state_dim, hidden_dim),
-            nn.ReLU(),
-            nn.Linear(hidden_dim, hidden_dim),
-            nn.ReLU(),
-            nn.Linear(hidden_dim, action_dim),
-            nn.Tanh()
-        )
 
-    def forward(self, state):
-        return self.fc(state)
+class ActorCritic(nn.Module):
 
-# Critic Network
-class Critic(nn.Module):
-    def __init__(self, state_dim, action_dim, hidden_dim=256):
-        super(Critic, self).__init__()
-        self.fc = nn.Sequential(
-            nn.Linear(state_dim + action_dim, hidden_dim),
-            nn.ReLU(),
-            nn.Linear(hidden_dim, hidden_dim),
-            nn.ReLU(),
-            nn.Linear(hidden_dim, 1)
-        )
-
-    def forward(self, state, action):
-        x = torch.cat([state, action], dim=-1)
-        return self.fc(x)
-
-# SAC Agent
-class SACAgent:
     def __init__(self):
-        self.actor = Actor(state_dim, action_dim).to(device)
-        self.critic_1 = Critic(state_dim, action_dim).to(device)
-        self.critic_2 = Critic(state_dim, action_dim).to(device)
-        self.target_critic_1 = Critic(state_dim, action_dim).to(device)
-        self.target_critic_2 = Critic(state_dim, action_dim).to(device)
+        super(ActorCritic, self).__init__()
+        self.Linear1 = nn.Linear(num_inputs, 64)
+        nn.init.xavier_uniform(self.Linear1.weight)
+        self.Linear2 = nn.Linear(64, 128)
+        nn.init.xavier_uniform(self.Linear2.weight)
+        self.Linear3 = nn.Linear(128, 64)
+        nn.init.xavier_uniform(self.Linear3.weight)
+        num_actions = env.action_space.n
 
-        self.actor_optimizer = optim.Adam(self.actor.parameters(), lr=lr_actor)
-        self.critic_optimizer_1 = optim.Adam(self.critic_1.parameters(), lr=lr_critic)
-        self.critic_optimizer_2 = optim.Adam(self.critic_2.parameters(), lr=lr_critic)
+        self.actor_head = nn.Linear(64, num_actions)
+        self.critic_head = nn.Linear(64, 1)
+        nn.init.xavier_uniform(self.critic_head.weight)
+        self.action_history = []
+        self.rewards_achieved = []
 
-        self.replay_buffer = ReplayBuffer()
+    def forward(self, state_inputs):
+        x = F.relu(self.Linear1(state_inputs))
+        x = F.relu(self.Linear2(x))
+        x = F.relu(self.Linear3(x))
+        return self.critic_head(x), x
 
-        # Copy weights to target networks
-        self.target_critic_1.load_state_dict(self.critic_1.state_dict())
-        self.target_critic_2.load_state_dict(self.critic_2.state_dict())
+    def act(self, state_inputs, eps):
+        value, x = self(state_inputs)
+        x = F.softmax(self.actor_head(x), dim=-1)
+        m = Categorical(x)
+        e_greedy = random.random()
+        if e_greedy > eps:
+            action = m.sample()
+        else:
+            action = m.sample_n(3)
+            pick = random.randint(-1, 2)
+            action = action[pick]
+        return value, action, m.log_prob(action)
 
-    def select_action(self, state, noise_scale=0.1):
-        state = torch.FloatTensor(state).unsqueeze(0).to(device)
-        action = self.actor(state).detach().cpu().numpy()[0]
-        action += noise_scale * np.random.randn(action_dim)
-        return np.clip(action, -action_bound, action_bound)
 
-    def update(self, batch_size=64):
-        if len(self.replay_buffer.buffer) < batch_size:
-            return
+model = ActorCritic()
+optimizer = optim.Adam(model.parameters(), lr=0.002)
 
-        states, actions, rewards, next_states, dones = self.replay_buffer.sample(batch_size)
-        states = torch.FloatTensor(states).to(device)
-        actions = torch.FloatTensor(actions).to(device)
-        rewards = torch.FloatTensor(rewards).unsqueeze(-1).to(device)
-        next_states = torch.FloatTensor(next_states).to(device)
-        dones = torch.FloatTensor(dones).unsqueeze(-1).to(device)
 
-        with torch.no_grad():
-            next_actions = self.actor(next_states)
-            q_target_1 = self.target_critic_1(next_states, next_actions)
-            q_target_2 = self.target_critic_2(next_states, next_actions)
-            q_target = rewards + gamma * (1 - dones) * torch.min(q_target_1, q_target_2)
+def perform_updates():
+    '''
+    Updating the ActorCritic network params
+    '''
+    r = 0
+    saved_actions = model.action_history
+    returns = []
+    rewards = model.rewards_achieved
+    policy_losses = []
+    critic_losses = []
 
-        # Update critics
-        q1 = self.critic_1(states, actions)
-        q2 = self.critic_2(states, actions)
-        critic_loss_1 = F.mse_loss(q1, q_target)
-        critic_loss_2 = F.mse_loss(q2, q_target)
+    for i in rewards[::-1]:
+        r = args.gamma * r + i
+        returns.insert(0, r)
+    returns = torch.tensor(returns)
 
-        self.critic_optimizer_1.zero_grad()
-        critic_loss_1.backward()
-        self.critic_optimizer_1.step()
+    for (log_prob, value), R in zip(saved_actions, returns):
+        advantage = R - value.item()
 
-        self.critic_optimizer_2.zero_grad()
-        critic_loss_2.backward()
-        self.critic_optimizer_2.step()
+        # calculating policy loss
+        policy_losses.append(-log_prob * advantage)
 
-        # Update actor
-        actor_loss = -self.critic_1(states, self.actor(states)).mean()
+        # calculating value loss
+        critic_losses.append(F.mse_loss(value, torch.tensor([R])))
+    optimizer.zero_grad()
 
-        self.actor_optimizer.zero_grad()
-        actor_loss.backward()
-        self.actor_optimizer.step()
+    # Finding cumulative loss
+    loss = torch.stack(policy_losses).sum() + torch.stack(critic_losses).sum()
+    loss.backward()
+    optimizer.step()
+    # Action history and rewards cleared for next episode
+    del model.rewards_achieved[:]
+    del model.action_history[:]
+    return loss.item()
 
-        # Update target networks
-        for param, target_param in zip(self.critic_1.parameters(), self.target_critic_1.parameters()):
-            target_param.data.copy_(tau * param.data + (1 - tau) * target_param.data)
-        for param, target_param in zip(self.critic_2.parameters(), self.target_critic_2.parameters()):
-            target_param.data.copy_(tau * param.data + (1 - tau) * target_param.data)
 
-# Training Loop
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-agent = SACAgent()
-rewards = []
+def main():
+    eps = epsilon_value(epsilon)
+    losses = []
+    counters = []
+    plot_rewards = []
 
-for episode in range(num_episodes):
-    state, _ = env.reset(seed=seed)
-    episode_reward = 0
-    done = False
+    for i_episode in range(0, args.num_episodes):
+        print(f"Current episode: {i_episode}")
+        counter = 0
+        state, _ = env.reset(seed=args.seed)  # Unpack the state and info
+        ep_reward = 0
+        done = False
 
-    while not done:
-        action = agent.select_action(state)
-        next_state, reward, done, truncated, _ = env.step(action)
-        agent.replay_buffer.add((state, action, reward, next_state, done))
-        agent.update()
-        state = next_state
-        episode_reward += reward
+        while not done:
 
-    rewards.append(episode_reward)
-    print(f"Episode {episode + 1}: Reward = {episode_reward}")
+            # unrolling state and getting action from the nn output
+            state = torch.from_numpy(state).float()  # state is now a NumPy array
+            value, action, ac_log_prob = model.act(state, eps)
+            model.action_history.append(SavedAction(ac_log_prob, value))
+            # Agent takes the action
+            state, reward, done, truncated, _ = env.step(action.item())  # Updated to 5 values
 
-# Plot Results
-plt.plot(rewards, label="SAC - MountainCarContinuous")
-plt.xlabel("Episodes")
-plt.ylabel("Rewards")
-plt.title("Training Rewards")
-plt.legend()
-plt.show()
+            model.rewards_achieved.append(reward)
+            ep_reward += reward
+            counter += 1
+            if counter % 5 == 0:
+                ''' performing backprop at every 5 time steps to avoid 
+                    highly correlational states (sampling traces from episode) '''
+                loss = perform_updates()
+            eps = epsilon_value(eps)
+
+        if i_episode % args.log_interval == 0:
+            losses.append(loss)
+            counters.append(counter)
+            plot_rewards.append(ep_reward)
+
+    # plotting loss
+    plt.xlabel('Episodes')
+    plt.ylabel('Loss')
+    plt.plot(losses)
+    plt.savefig('loss1.png')
+
+    # plotting number of timesteps elapsed before convergence
+    plt.clf()
+    plt.xlabel('Episodes')
+    plt.ylabel('timesteps')
+    plt.plot(counters)
+    plt.savefig('timestep.png')
+    # plotting total rewards achieved during all episodes
+    plt.clf()
+    plt.xlabel('Episodes')
+    plt.ylabel('rewards')
+    plt.plot(plot_rewards)
+    plt.savefig('rewards.png')
+
+
+
+if __name__ == '__main__':
+    main()
