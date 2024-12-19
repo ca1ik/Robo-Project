@@ -11,6 +11,8 @@ import time
 # Device configuration
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+
+
 # Neural Network for Actor-Critic architecture
 class ActorCriticNetwork(nn.Module):
     def __init__(self, input_dims, n_actions, hidden_dims=256):
@@ -292,8 +294,11 @@ def main():
     
     total_training_time = time.time() - start_time
 
-    def plot_rewards_with_label(episode_rewards, algorithm_name):
-    
+    algorithm_name = 'PPO | Car Racing'
+    plot_rewards_with_label(episode_rewards, algorithm_name)
+
+def plot_rewards_with_label(episode_rewards, algorithm_name):
+   
     # Plot rewards
     plt.figure(figsize=(12, 6))
     plt.plot(episode_rewards, label=algorithm_name)
@@ -314,5 +319,10 @@ def main():
     
     env.close()
 
+
+
 if __name__ == "__main__":
     main()
+    
+    # Example usage
+
