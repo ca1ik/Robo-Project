@@ -33,7 +33,7 @@ np.random.seed(args.seed)
 random.seed(args.seed)
 
 num_inputs = env.observation_space.shape[0]  # Giriş boyutu (örneğin, 2)
-SavedAction = namedtuple('SavedAction', ['log_prob', 'value', 'entropy'])
+SavedAction = namedtuple('SavedAction', ['action', 'log_prob', 'value', 'entropy'])
 
 def normalize_state(state):
     position, velocity = state
@@ -142,7 +142,7 @@ def main():
         while not done:
             state_tensor = torch.from_numpy(state).float()
             value, action, log_prob, entropy = model.act(state_tensor)
-            saved_actions.append(SavedAction(log_prob, value, entropy))
+            saved_actions.append(SavedAction(action.item(), log_prob, value, entropy))
             # Ajan aksiyonu alır
             state, reward, terminated, truncated, _ = env.step(action.item())
             done = terminated or truncated
@@ -152,12 +152,16 @@ def main():
             ep_reward += reward
             counter += 1
 
+            # İlk birkaç episode'u render et
+            if i_episode <= 5:
+                env.render()
+
         # Episode sonunda tüm aksiyonları güncelle
         loss, policy_loss_val, value_loss_val, entropy_loss_val = perform_updates(saved_actions, rewards, args.gamma)
 
         if i_episode % args.log_interval == 0:
             # Aksiyon dağılımını hesapla
-            actions = [action.item() for action in [sa.log_prob for sa in saved_actions]]
+            actions = [sa.action for sa in saved_actions]
             action_counts = np.bincount(actions, minlength=env.action_space.n)
 
             losses.append(loss)
@@ -173,6 +177,8 @@ def main():
 
     # Grafik çizimleri
     plt.figure(figsize=(12, 8))
+
+    # Loss grafiği
     plt.subplot(2, 2, 1)
     plt.xlabel('Episodes')
     plt.ylabel('Loss')
@@ -183,18 +189,21 @@ def main():
     plt.legend()
     plt.title('Loss over Episodes')
 
+    # Timesteps grafiği
     plt.subplot(2, 2, 2)
     plt.xlabel('Episodes')
     plt.ylabel('Timesteps')
     plt.plot(counters)
     plt.title('Timesteps per Episode')
 
+    # Toplam ödüller grafiği
     plt.subplot(2, 2, 3)
     plt.xlabel('Episodes')
     plt.ylabel('Rewards')
     plt.plot(plot_rewards)
     plt.title('Total Rewards per Episode')
 
+    # Ortalama ödüller grafiği
     plt.subplot(2, 2, 4)
     plt.xlabel('Episodes')
     plt.ylabel('Average Rewards')
