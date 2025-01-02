@@ -1,5 +1,12 @@
-    
-import plt;    #pip
+import gymnasium as gym #problematic lit
+import numpy as np
+import torch
+import torch.nn as nn
+import torch.optim as optim
+import torch.nn.functional as F
+import matplotlib.pyplot as plt
+import time    
+import plt    #pip
 import gym
 
 
