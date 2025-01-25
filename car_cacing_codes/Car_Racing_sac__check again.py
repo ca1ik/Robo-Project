@@ -263,7 +263,7 @@ def plot_rewards_with_label(episode_rewards, algorithm_name):
     plt.legend(loc='upper right')
     plt.grid()
     plt.show()
-
+# wont show real degrees
 
 if __name__ == "__main__":
     rewards_history, success_count, avg_reward, training_time = train()
