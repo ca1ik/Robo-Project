@@ -23,6 +23,6 @@ def plot_rewards_with_label(episode_rewards, algorithm_name):
 
 
     if __name__ == "__main__":
-     rewards_history, success_count, avg_reward, training_time = train()
-    algorithm_name = 'SAC | Car Racing'
+     rewards_history, success_count, avg_reward, training_time = train() #problem
+    algorithm_name = 'Car Racing Table with SAC'
     plot_rewards_with_label(rewards_history, algorithm_name)
