@@ -1,7 +1,7 @@
-import numpy as np
+import numpy as np #problem
 import pandas as pd
 from sklearn.preprocessing import MinMaxScaler
-import matplotlib.pyplot as plt
+#import matplotlib.pyplot as plt
 
 # Veri tanımlama
 data = """
